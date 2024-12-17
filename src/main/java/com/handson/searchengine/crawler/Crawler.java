@@ -20,6 +20,8 @@ import com.handson.searchengine.model.CrawlStatusOut;
 import com.handson.searchengine.model.CrawlerRecord;
 import com.handson.searchengine.model.CrawlerRequest;
 import com.handson.searchengine.model.StopReason;
+import com.handson.searchengine.model.UrlSearchDoc;
+import com.handson.searchengine.util.ElasticSearch;
 
 @Service
 public class Crawler {
@@ -34,6 +36,9 @@ public class Crawler {
 
     @Autowired
     Producer producer;
+
+    @Autowired
+    ElasticSearch elasticSearch;
     
     public void crawl(String crawlId, CrawlerRequest crawlerRequest) throws InterruptedException, IOException {
         initCrawlInRedis(crawlId);
@@ -48,6 +53,7 @@ public class Crawler {
         setCrawlStatus(crawlId, CrawlStatus.of(rec.getDistance(),rec.getStartTime(),0,stopReason));
         if(stopReason == null){
             Document webPageContent = Jsoup.connect(rec.getUrl()).get();
+            indexElasticSearch(rec, webPageContent);
             List<String> innerUrls = extractWebPageUrls(rec.getBaseUrl(), webPageContent);
             addUrlsToQueue(rec, innerUrls, rec.getDistance() +1);
         }
@@ -72,6 +78,7 @@ public class Crawler {
     }
 
     private List<String> extractWebPageUrls(String baseUrl, Document webPageContent) {
+        
         List<String> links = webPageContent.select("a[href]")
                 .eachAttr("abs:href")
                 .stream()
@@ -111,5 +118,10 @@ public class Crawler {
         return CrawlStatusOut.of(cs);
     }
 
-
+    private void indexElasticSearch(CrawlerRecord rec, Document webPageContent) {
+        logger.info(">> adding elastic search for webPage: " + rec.getUrl());
+        String text = String.join(" ", webPageContent.select("a[href]").eachText());
+        UrlSearchDoc searchDoc = UrlSearchDoc.of(rec.getCrawlId(), text, rec.getUrl(), rec.getBaseUrl(), rec.getDistance());
+        elasticSearch.addData(searchDoc);
+        }
 }
