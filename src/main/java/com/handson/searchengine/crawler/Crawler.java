@@ -1,14 +1,8 @@
 package com.handson.searchengine.crawler;
 
-import java.awt.image.RescaleOp;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.handson.searchengine.model.CrawlStatus;
-import com.handson.searchengine.model.CrawlStatusOut;
-import com.handson.searchengine.model.CrawlerRecord;
-import com.handson.searchengine.model.CrawlerRequest;
-import com.handson.searchengine.model.StopReason;
+import java.io.IOException;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -18,14 +12,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.handson.searchengine.kafka.Producer;
+import com.handson.searchengine.model.CrawlStatus;
+import com.handson.searchengine.model.CrawlStatusOut;
+import com.handson.searchengine.model.CrawlerRecord;
+import com.handson.searchengine.model.CrawlerRequest;
+import com.handson.searchengine.model.StopReason;
 
 @Service
 public class Crawler {
@@ -38,33 +32,26 @@ public class Crawler {
     @Autowired
     ObjectMapper om;
 
-    public static final int MAX_CAPACITY = 100000;
-  
-    private BlockingQueue<CrawlerRecord> queue = new ArrayBlockingQueue<CrawlerRecord>(MAX_CAPACITY);
-    private int curDistance = 0;
+    @Autowired
+    Producer producer;
     
     public void crawl(String crawlId, CrawlerRequest crawlerRequest) throws InterruptedException, IOException {
         initCrawlInRedis(crawlId);
-        queue.clear();
-       
-        queue.put(CrawlerRecord.of(crawlId, crawlerRequest));
-        while (!queue.isEmpty() && getStopReason(queue.peek()) == null) {
-            try{
-            CrawlerRecord rec = queue.poll();
-            logger.info("crawling url:" + rec.getUrl());
-            setCrawlStatus(crawlId, CrawlStatus.of(rec.getDistance(),rec.getStartTime(),0,null));
+        producer.send(CrawlerRecord.of(crawlId, crawlerRequest));
+
+    }
+
+    public void crawlOneRecord(String crawlId, CrawlerRecord rec)
+            throws JsonProcessingException, IOException, InterruptedException {
+        logger.info("crawling url:" + rec.getUrl());
+        StopReason stopReason = getStopReason(rec);
+        setCrawlStatus(crawlId, CrawlStatus.of(rec.getDistance(),rec.getStartTime(),0,stopReason));
+        if(stopReason == null){
             Document webPageContent = Jsoup.connect(rec.getUrl()).get();
             List<String> innerUrls = extractWebPageUrls(rec.getBaseUrl(), webPageContent);
             addUrlsToQueue(rec, innerUrls, rec.getDistance() +1);
-            }
-            catch(Exception e){
-
-            }
         }
-        CrawlerRecord rec = queue.peek();
-        var stopReason =  getStopReason(rec);
-        setCrawlStatus(crawlId, CrawlStatus.of(rec.getDistance(),rec.getStartTime(),0,stopReason));
-
+        
     }
 
     private StopReason getStopReason(CrawlerRecord rec) {
@@ -75,11 +62,11 @@ public class Crawler {
     }
 
 
-    private void addUrlsToQueue(CrawlerRecord rec, List<String> urls, int distance) throws InterruptedException {
+    private void addUrlsToQueue(CrawlerRecord rec, List<String> urls, int distance) throws InterruptedException, JsonProcessingException {
         logger.info(">> adding urls to queue: distance->" + distance + " amount->" + urls.size());
         for (String url : urls) {
             if (!crawlHasVisited(rec, url)) {
-                queue.put(CrawlerRecord.of(rec).withUrl(url).withIncDistance()) ;
+                producer.send(CrawlerRecord.of(rec).withUrl(url).withIncDistance()) ;
             }
         }
     }

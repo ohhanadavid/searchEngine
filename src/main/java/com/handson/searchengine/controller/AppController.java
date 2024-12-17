@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.handson.searchengine.crawler.Crawler;
+import com.handson.searchengine.kafka.Producer;
 import com.handson.searchengine.model.CrawlStatusOut;
 import com.handson.searchengine.model.CrawlerRequest;
 
@@ -59,5 +60,14 @@ private String generateCrawlId() {
         res.append(charPool.charAt(random.nextInt(charPool.length())));
         }
         return res.toString();
+        }
+
+        @Autowired
+        Producer producer;
+    
+        @RequestMapping(value = "/sendKafka", method = RequestMethod.POST)
+        public String sendKafka(@RequestBody CrawlerRequest request) throws IOException, InterruptedException {
+                producer.send(request);
+                return "OK";
         }
 }
