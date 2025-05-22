@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-SearchengineApplication<searchengine>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.handson.searchengine.SearchengineApplication",
+            "projectName": "searchengine",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
